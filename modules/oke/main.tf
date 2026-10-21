@@ -1,4 +1,12 @@
+# Explicit ordering on NSG rules / KMS policy. A module-level depends_on would defer every data source
+# in this module (e.g. the worker image lookup) and make node pools show spurious image changes.
+resource "terraform_data" "prerequisites" {
+  input = var.prerequisites
+}
+
 resource "oci_containerengine_cluster" "this" {
+  depends_on = [terraform_data.prerequisites]
+
   compartment_id     = var.compartment_id
   name               = "${var.name_prefix}-oke"
   kubernetes_version = var.kubernetes_version
@@ -60,7 +68,8 @@ locals {
 }
 
 resource "oci_containerengine_node_pool" "this" {
-  for_each = var.node_pools
+  for_each   = var.node_pools
+  depends_on = [terraform_data.prerequisites]
 
   compartment_id     = var.compartment_id
   cluster_id         = oci_containerengine_cluster.this.id

@@ -49,3 +49,13 @@ moved {
   from = oci_bastion_bastion.this
   to   = module.oke.oci_bastion_bastion.this
 }
+
+# Internet Gateway and public route table moved from the jump host module to the network module.
+moved {
+  from = module.jumphost[0].oci_core_internet_gateway.this
+  to   = module.network.oci_core_internet_gateway.this[0]
+}
+moved {
+  from = module.jumphost[0].oci_core_route_table.public
+  to   = module.network.oci_core_route_table.public[0]
+}

@@ -2,6 +2,11 @@ variable "compartment_id" { type = string }
 variable "name_prefix" { type = string }
 variable "tags" { type = map(string) }
 variable "vcn_id" { type = string }
+
+variable "route_table_id" {
+  type        = string
+  description = "Route table with the Internet Gateway route (from the network module)."
+}
 variable "availability_domain" { type = string }
 
 variable "subnet_cidr" {

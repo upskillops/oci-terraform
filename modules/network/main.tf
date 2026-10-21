@@ -18,7 +18,7 @@ resource "oci_core_vcn" "this" {
   freeform_tags  = var.tags
 }
 
-# No Internet Gateway on purpose: the VCN is fully private.
+# Workloads stay private: only the optional public subnets (jump host, public LBs) use the Internet Gateway.
 resource "oci_core_nat_gateway" "this" {
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.this.id
@@ -104,4 +104,52 @@ resource "oci_core_subnet" "this" {
   security_list_ids          = [oci_core_security_list.deny_all.id]
   prohibit_public_ip_on_vnic = true
   freeform_tags              = var.tags
+}
+
+# OCI allows a single Internet Gateway per VCN; shared by every public subnet.
+resource "oci_core_internet_gateway" "this" {
+  count = var.create_internet_gateway ? 1 : 0
+
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.this.id
+  display_name   = "${var.name_prefix}-igw"
+  freeform_tags  = var.tags
+}
+
+resource "oci_core_route_table" "public" {
+  count = var.create_internet_gateway ? 1 : 0
+
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.this.id
+  display_name   = "${var.name_prefix}-rt-public"
+  freeform_tags  = var.tags
+
+  route_rules {
+    destination       = "0.0.0.0/0"
+    destination_type  = "CIDR_BLOCK"
+    network_entity_id = oci_core_internet_gateway.this[0].id
+    description       = "Internet via Internet Gateway"
+  }
+}
+
+# Internet-facing load balancers only; NSGs control what reaches them.
+resource "oci_core_subnet" "public_lb" {
+  count = var.public_lb_subnet_cidr != null ? 1 : 0
+
+  compartment_id             = var.compartment_id
+  vcn_id                     = oci_core_vcn.this.id
+  display_name               = "${var.name_prefix}-lb-public"
+  dns_label                  = "lbpublic"
+  cidr_block                 = var.public_lb_subnet_cidr
+  route_table_id             = oci_core_route_table.public[0].id
+  security_list_ids          = [oci_core_security_list.deny_all.id]
+  prohibit_public_ip_on_vnic = false
+  freeform_tags              = var.tags
+
+  lifecycle {
+    precondition {
+      condition     = var.create_internet_gateway
+      error_message = "public_lb_subnet_cidr requires create_internet_gateway = true."
+    }
+  }
 }

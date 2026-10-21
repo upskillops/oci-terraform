@@ -1,5 +1,5 @@
 resource "oci_core_network_security_group" "this" {
-  for_each = toset(["cp", "workers", "pods", "lb", "db"])
+  for_each = toset(concat(["cp", "workers", "pods", "lb", "db"], var.create_public_lb ? ["lb_public"] : []))
 
   compartment_id = var.compartment_id
   vcn_id         = var.vcn_id
@@ -86,7 +86,25 @@ locals {
     ]
   ])
 
-  rules = { for r in concat(local.rules_static, local.rules_api, local.rules_lb, local.rules_db, local.rules_db_admin) : r.id => r }
+  # Internet-facing load balancers (lb_public NSG) to worker NodePorts.
+  rules_public_lb = var.create_public_lb ? concat(
+    flatten([
+      for c in var.public_lb_allowed_cidrs : [
+        for p in var.public_lb_ports : merge(local.d, {
+          id    = "lbp-in-${replace(replace(c, ".", "-"), "/", "-")}-${p}", nsg = "lb_public", dir = "INGRESS", proto = "6",
+          ptype = local.t_cidr, peer = c, min = p, max = p, desc = "Internet to public load balancer"
+        })
+      ]
+    ]),
+    [
+      merge(local.d, { id = "lbp-eg-nodeport", nsg = "lb_public", dir = "EGRESS", proto = "6", ptype = local.t_nsg, peer = "workers", min = 30000, max = 32767, desc = "Public LB to NodePorts" }),
+      merge(local.d, { id = "lbp-eg-10256", nsg = "lb_public", dir = "EGRESS", proto = "6", ptype = local.t_nsg, peer = "workers", min = 10256, max = 10256, desc = "Public LB health check" }),
+      merge(local.d, { id = "wk-in-lbp-nodeport", nsg = "workers", dir = "INGRESS", proto = "6", ptype = local.t_nsg, peer = "lb_public", min = 30000, max = 32767, desc = "Public LB to NodePorts" }),
+      merge(local.d, { id = "wk-in-lbp-10256", nsg = "workers", dir = "INGRESS", proto = "6", ptype = local.t_nsg, peer = "lb_public", min = 10256, max = 10256, desc = "Public LB to kube-proxy health check" }),
+    ]
+  ) : []
+
+  rules = { for r in concat(local.rules_static, local.rules_api, local.rules_lb, local.rules_db, local.rules_db_admin, local.rules_public_lb) : r.id => r }
 }
 
 resource "oci_core_network_security_group_security_rule" "this" {

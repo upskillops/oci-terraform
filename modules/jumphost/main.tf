@@ -13,28 +13,6 @@ locals {
   kubectl_minor = join(".", slice(split(".", trimprefix(var.kubernetes_version, "v")), 0, 2))
 }
 
-# The VCN is otherwise private; this gateway only serves the jump host subnet.
-resource "oci_core_internet_gateway" "this" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  display_name   = "${var.name_prefix}-igw"
-  freeform_tags  = var.tags
-}
-
-resource "oci_core_route_table" "public" {
-  compartment_id = var.compartment_id
-  vcn_id         = var.vcn_id
-  display_name   = "${var.name_prefix}-rt-public"
-  freeform_tags  = var.tags
-
-  route_rules {
-    destination       = "0.0.0.0/0"
-    destination_type  = "CIDR_BLOCK"
-    network_entity_id = oci_core_internet_gateway.this.id
-    description       = "Internet via Internet Gateway"
-  }
-}
-
 # Empty security list: the NSG below is the only thing that opens traffic.
 resource "oci_core_security_list" "empty" {
   compartment_id = var.compartment_id
@@ -49,7 +27,7 @@ resource "oci_core_subnet" "public" {
   display_name               = "${var.name_prefix}-jumphost"
   dns_label                  = "jumphost"
   cidr_block                 = var.subnet_cidr
-  route_table_id             = oci_core_route_table.public.id
+  route_table_id             = var.route_table_id
   security_list_ids          = [oci_core_security_list.empty.id]
   prohibit_public_ip_on_vnic = false
   freeform_tags              = var.tags

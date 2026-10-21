@@ -66,6 +66,9 @@ module "network" {
   vcn_cidr       = var.vcn_cidr
   vcn_dns_label  = var.vcn_dns_label
   subnet_cidrs   = local.subnet_cidrs
+
+  create_internet_gateway = var.create_jumphost || var.create_public_lb
+  public_lb_subnet_cidr   = var.create_public_lb ? var.public_lb_subnet_cidr : null
 }
 
 module "security" {
@@ -81,6 +84,9 @@ module "security" {
   lb_allowed_cidrs           = var.lb_allowed_cidrs
   lb_ports                   = var.lb_ports
   db_allowed_cidrs           = concat(var.db_allowed_cidrs, local.jumphost_cidrs)
+  create_public_lb           = var.create_public_lb
+  public_lb_allowed_cidrs    = var.public_lb_allowed_cidrs
+  public_lb_ports            = var.public_lb_ports
 }
 
 module "jumphost" {
@@ -91,6 +97,7 @@ module "jumphost" {
   name_prefix         = var.name_prefix
   tags                = local.tags
   vcn_id              = module.network.vcn_id
+  route_table_id      = module.network.public_route_table_id
   availability_domain = local.availability_domains[0]
   subnet_cidr         = var.jumphost_subnet_cidr
   allowed_cidrs       = var.jumphost_allowed_cidrs
@@ -124,7 +131,10 @@ module "oke" {
   bastion_client_cidrs = var.bastion_client_cidrs
 
   # NSG rules and the KMS service policy must exist before nodes bootstrap.
-  depends_on = [module.security, module.vault]
+  prerequisites = {
+    nsg_rules  = module.security.rule_ids
+    kms_policy = try(module.vault[0].kms_policy_id, null)
+  }
 }
 
 module "storage" {

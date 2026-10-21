@@ -244,6 +244,31 @@ variable "db_allowed_cidrs" {
   default     = []
 }
 
+# ---------------- Public load balancers ----------------
+variable "create_public_lb" {
+  type        = bool
+  description = "Create a public subnet + NSG for internet-facing load balancers (e.g. Istio ingress gateway)."
+  default     = false
+}
+
+variable "public_lb_subnet_cidr" {
+  type        = string
+  description = "Public subnet for internet-facing load balancers."
+  default     = "10.0.5.0/24"
+}
+
+variable "public_lb_allowed_cidrs" {
+  type        = list(string)
+  description = "CIDRs allowed to reach public load balancers."
+  default     = ["0.0.0.0/0"]
+}
+
+variable "public_lb_ports" {
+  type        = list(number)
+  description = "Listener ports opened on public load balancers."
+  default     = [80, 443]
+}
+
 # ---------------- Public jump host ----------------
 variable "create_jumphost" {
   type        = bool

@@ -26,6 +26,16 @@ output "bastion_id" {
   value = module.oke.bastion_id
 }
 
+output "public_lb_subnet_id" {
+  description = "Use in the Service annotation service.beta.kubernetes.io/oci-load-balancer-subnet1."
+  value       = module.network.public_lb_subnet_id
+}
+
+output "public_lb_nsg_id" {
+  description = "Use in the Service annotation oci.oraclecloud.com/oci-network-security-groups."
+  value       = try(module.security.nsg_ids["lb_public"], null)
+}
+
 output "jumphost_public_ip" {
   value = try(module.jumphost[0].public_ip, null)
 }

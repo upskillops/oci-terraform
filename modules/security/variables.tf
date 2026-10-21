@@ -31,3 +31,19 @@ variable "db_allowed_cidrs" {
   description = "Extra CIDRs (VPN / peered networks) allowed to reach the database NSG."
   default     = []
 }
+
+variable "create_public_lb" {
+  type        = bool
+  description = "Create the NSG for internet-facing load balancers (lb_public)."
+  default     = false
+}
+
+variable "public_lb_allowed_cidrs" {
+  type    = list(string)
+  default = ["0.0.0.0/0"]
+}
+
+variable "public_lb_ports" {
+  type    = list(number)
+  default = [80, 443]
+}

@@ -60,3 +60,9 @@ variable "bastion_client_cidrs" {
   type    = list(string)
   default = []
 }
+
+variable "prerequisites" {
+  type        = any
+  description = "IDs that must exist before the cluster and nodes are created (NSG rules, KMS policy)."
+  default     = null
+}

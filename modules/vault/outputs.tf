@@ -14,3 +14,7 @@ output "db_password" {
   value     = local.db_password
   sensitive = true
 }
+
+output "kms_policy_id" {
+  value = oci_identity_policy.kms.id
+}
