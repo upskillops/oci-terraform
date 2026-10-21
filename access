@@ -1,1 +1,8 @@
 export SUPPRESS_LABEL_WARNING=True KUBECONFIG=$HOME/.kube/oke-uat.config && CID=$(terraform output -raw cluster_id) && oci ce cluster create-kubeconfig --cluster-id $CID --region ap-mumbai-1 --token-version 2.0.0 --kube-endpoint PRIVATE_ENDPOINT --file $KUBECONFIG 2>&1 | tail -1 && kubectl config set-cluster "$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')" --proxy-url=socks5://localhost:1080 >/dev/null && (ssh -o BatchMode=yes -N -D 1080 opc@137.23.32.100 & echo $! > /tmp/oke-socks.pid; sleep 4) && kubectl get nodes -o wide 2>&1 | head -5; kubectl get pods -A 2>&1 | head -5
+[DEFAULT]
+key_file=/Users/amitchaturvedi/.oci/wibmooci.pem
+pass_phrase=Wibmo@123
+user=ocid1.user.oc1..aaaaaaaaqrfyv7zthygpeyx3sruwxapracgtlmxingjzzce3qn7cntmfl2xa
+fingerprint=29:42:04:c3:0c:52:5d:96:59:2d:fb:e5:0f:d6:db:6c
+tenancy=ocid1.tenancy.oc1..aaaaaaaa7a4hivu7qw5lrjcd2ophdjigokg7ta4qycs66ptquj2lhlp5xhba
+region=ap-mumbai-1
