@@ -1,0 +1,68 @@
+name: terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: fmt
+        run: terraform fmt -check -recursive
+      - name: validate (root + modules, no backend)
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - uses: terraform-linters/setup-tflint@v4
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
+      - name: module tests (mocked provider, no cloud access)
+        run: |
+          cd modules/security
+          terraform init -backend=false
+          terraform test
+      - name: security scan (trivy config)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  plan:
+    needs: checks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [uat]
+    env:
+      # Store these as repository/environment secrets.
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_mysql_admin_password: ${{ secrets.MYSQL_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: write API key
+        run: |
+          mkdir -p ~/.oci && umask 077
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          echo "TF_VAR_private_key_path=$HOME/.oci/key.pem" >> "$GITHUB_ENV"
+          printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=ap-mumbai-1\nkey_file=%s\n' \
+            "${{ secrets.OCI_USER_OCID }}" "${{ secrets.OCI_FINGERPRINT }}" "${{ secrets.OCI_TENANCY_OCID }}" "$HOME/.oci/key.pem" > ~/.oci/config
+      - run: terraform init -backend-config=envs/${{ matrix.env }}.backend.hcl
+      - run: terraform plan -var-file=envs/${{ matrix.env }}.tfvars -lock=false -no-color

@@ -1,0 +1,15 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform.tfvars
+terraform.tfvars.*
+!terraform.tfvars.example
+*.auto.tfvars
+*.pem
+*.key
+
+# SSH keys (never commit)
+keys/

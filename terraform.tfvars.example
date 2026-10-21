@@ -1,0 +1,46 @@
+# ---- OCI auth (or use ~/.oci/config) ----
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxx"
+# user_ocid        = "ocid1.user.oc1..xxxx"
+# fingerprint      = "aa:bb:cc:..."
+# private_key_path = "/absolute/path/to/oci_api_key.pem"
+
+region             = "ap-mumbai-1"
+compartment_ocid   = "ocid1.compartment.oc1..xxxx"
+name_prefix        = "uat"
+kubernetes_version = "v1.33.1" # pick a version supported in your region
+
+# ---- Network ----
+vcn_cidr                   = "10.0.0.0/16"
+db_subnet_cidr             = "10.0.3.0/24"
+api_endpoint_allowed_cidrs = []
+lb_allowed_cidrs           = ["10.0.0.0/8"]
+db_allowed_cidrs           = []
+
+# ---- Access (public IP of your workstation; [] = no Bastion) ----
+create_bastion       = true
+bastion_client_cidrs = []
+
+# ---- Worker nodes (minimum footprint) ----
+node_architecture = "x86_64" # "aarch64" for VM.Standard.A1.Flex
+node_pools = {
+  general = { shape = "VM.Standard.E4.Flex", ocpus = 1, memory_gbs = 8, size = 1, boot_volume_gb = 50 }
+}
+
+# ---- Object Storage ----
+buckets = {
+  data    = {}
+  backups = { versioning = "Enabled" }
+}
+# Let pods use the buckets without keys (ENHANCED cluster, workload identity):
+# storage_workload_service_account = "app-sa"
+# storage_workload_namespace       = "default"
+
+# ---- MySQL HeatWave ----
+create_mysql              = true
+mysql_shape_name          = "MySQL.4"
+mysql_data_storage_gb     = 50
+mysql_enable_heatwave     = true
+mysql_heatwave_cluster_size = 1
+mysql_deletion_protection = false # set true for production
+# password comes from the environment, never from this file:
+#   export TF_VAR_mysql_admin_password='Str0ng#Passw0rd'

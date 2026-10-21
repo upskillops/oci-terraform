@@ -1,0 +1,12 @@
+#cloud-config
+write_files:
+  - path: /etc/yum.repos.d/kubernetes.repo
+    content: |
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://pkgs.k8s.io/core:/stable:/v${kubectl_minor}/rpm/
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://pkgs.k8s.io/core:/stable:/v${kubectl_minor}/rpm/repodata/repomd.xml.key
+runcmd:
+  - dnf install -y kubectl mysql python39-oci-cli
