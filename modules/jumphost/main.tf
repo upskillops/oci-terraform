@@ -19,6 +19,11 @@ resource "oci_core_security_list" "empty" {
   vcn_id         = var.vcn_id
   display_name   = "${var.name_prefix}-sl-jumphost"
   freeform_tags  = var.tags
+
+  # Rules added by hand (e.g. TCP 5475 pods -> jump host) are kept; NSGs remain the managed path.
+  lifecycle {
+    ignore_changes = [ingress_security_rules, egress_security_rules]
+  }
 }
 
 resource "oci_core_subnet" "public" {

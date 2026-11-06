@@ -80,6 +80,11 @@ resource "oci_core_security_list" "deny_all" {
   vcn_id         = oci_core_vcn.this.id
   display_name   = "${var.name_prefix}-sl-empty"
   freeform_tags  = var.tags
+
+  # Rules added by hand (e.g. TCP 5475 pods -> jump host) are kept; NSGs remain the managed path.
+  lifecycle {
+    ignore_changes = [ingress_security_rules, egress_security_rules]
+  }
 }
 
 locals {
@@ -152,4 +157,19 @@ resource "oci_core_subnet" "public_lb" {
       error_message = "public_lb_subnet_cidr requires create_internet_gateway = true."
     }
   }
+}
+
+# Self-managed data services (Kafka / Redis VMs): private, outbound via NAT for package and image pulls.
+resource "oci_core_subnet" "data" {
+  count = var.data_subnet_cidr != null ? 1 : 0
+
+  compartment_id             = var.compartment_id
+  vcn_id                     = oci_core_vcn.this.id
+  display_name               = "${var.name_prefix}-data"
+  dns_label                  = "data"
+  cidr_block                 = var.data_subnet_cidr
+  route_table_id             = oci_core_route_table.private.id
+  security_list_ids          = [oci_core_security_list.deny_all.id]
+  prohibit_public_ip_on_vnic = true
+  freeform_tags              = var.tags
 }

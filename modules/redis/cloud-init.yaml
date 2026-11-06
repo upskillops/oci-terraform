@@ -1,0 +1,85 @@
+#cloud-config
+write_files:
+  - path: /etc/redis/redis.conf
+    permissions: "0640"
+    content: |
+      bind 0.0.0.0
+      port 6379
+      protected-mode no
+      requirepass ${password}
+      masterauth ${password}
+      replica-announce-ip ${ip}
+      dir /data
+      appendonly yes
+      appendfsync everysec
+      maxmemory ${maxmemory}
+      maxmemory-policy noeviction
+%{ if !is_primary ~}
+      replicaof ${primary_ip} 6379
+%{ endif ~}
+  # Sentinel rewrites its config at runtime, so it lives in a writable directory.
+  - path: /var/lib/redis/sentinel/sentinel.conf
+    permissions: "0640"
+    content: |
+      port 26379
+      bind 0.0.0.0
+      protected-mode no
+      sentinel announce-ip ${ip}
+      sentinel resolve-hostnames no
+      sentinel monitor ${master_name} ${primary_ip} 6379 ${quorum}
+      sentinel auth-pass ${master_name} ${password}
+      sentinel down-after-milliseconds ${master_name} 5000
+      sentinel failover-timeout ${master_name} 60000
+      sentinel parallel-syncs ${master_name} 1
+  - path: /etc/systemd/system/redis.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Redis in Podman
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/podman rm -f redis
+      ExecStart=/usr/bin/podman run --name redis --network host \
+        -v /etc/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro,Z \
+        -v /var/lib/redis/data:/data:Z \
+        ${image} redis-server /usr/local/etc/redis/redis.conf
+      ExecStop=/usr/bin/podman stop -t 30 redis
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/redis-sentinel.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Redis Sentinel in Podman
+      Wants=network-online.target
+      After=network-online.target redis.service
+
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/podman rm -f redis-sentinel
+      ExecStart=/usr/bin/podman run --name redis-sentinel --network host \
+        -v /var/lib/redis/sentinel:/etc/sentinel:Z \
+        ${image} redis-sentinel /etc/sentinel/sentinel.conf
+      ExecStop=/usr/bin/podman stop -t 30 redis-sentinel
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/sysctl.d/90-redis.conf
+    content: |
+      vm.overcommit_memory = 1
+runcmd:
+  - sysctl --system
+  - dnf install -y podman
+  # The image runs as redis (uid 999).
+  - mkdir -p /var/lib/redis/data && chown -R 999:999 /var/lib/redis /etc/redis
+  - firewall-cmd --permanent --add-port=6379/tcp --add-port=26379/tcp
+  - firewall-cmd --reload
+  - podman pull ${image}
+  - systemctl daemon-reload
+  - systemctl enable --now redis.service redis-sentinel.service

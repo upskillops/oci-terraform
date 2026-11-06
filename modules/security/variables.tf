@@ -47,3 +47,26 @@ variable "public_lb_ports" {
   type    = list(number)
   default = [80, 443]
 }
+
+variable "create_data_nsg" {
+  type        = bool
+  description = "Create the NSG for self-managed Kafka / Redis VMs (data)."
+  default     = false
+}
+
+variable "data_admin_cidrs" {
+  type        = list(string)
+  description = "CIDRs (e.g. the jump host subnet) allowed SSH, Kafka and Redis access to the data VMs."
+  default     = []
+}
+
+variable "kafka_ports" {
+  type    = list(number)
+  default = [9092]
+}
+
+variable "redis_ports" {
+  type        = list(number)
+  description = "Redis (6379) and Sentinel (26379)."
+  default     = [6379, 26379]
+}

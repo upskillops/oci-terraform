@@ -20,3 +20,9 @@ variable "public_lb_subnet_cidr" {
   description = "Public subnet for internet-facing load balancers. null = none."
   default     = null
 }
+
+variable "data_subnet_cidr" {
+  type        = string
+  description = "Private subnet for self-managed data services (Kafka, Redis VMs). null = none."
+  default     = null
+}

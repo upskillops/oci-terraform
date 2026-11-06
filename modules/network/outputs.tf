@@ -17,3 +17,7 @@ output "public_route_table_id" {
 output "public_lb_subnet_id" {
   value = try(oci_core_subnet.public_lb[0].id, null)
 }
+
+output "data_subnet_id" {
+  value = try(oci_core_subnet.data[0].id, null)
+}

@@ -1,5 +1,9 @@
 resource "oci_core_network_security_group" "this" {
-  for_each = toset(concat(["cp", "workers", "pods", "lb", "db"], var.create_public_lb ? ["lb_public"] : []))
+  for_each = toset(concat(
+    ["cp", "workers", "pods", "lb", "db"],
+    var.create_public_lb ? ["lb_public"] : [],
+    var.create_data_nsg ? ["data"] : [],
+  ))
 
   compartment_id = var.compartment_id
   vcn_id         = var.vcn_id
@@ -104,7 +108,30 @@ locals {
     ]
   ) : []
 
-  rules = { for r in concat(local.rules_static, local.rules_api, local.rules_lb, local.rules_db, local.rules_db_admin, local.rules_public_lb) : r.id => r }
+  # Self-managed Kafka / Redis VMs (data NSG): clients are OKE workers and pods, plus admin CIDRs.
+  data_client_ports = concat(var.kafka_ports, var.redis_ports)
+  rules_data = var.create_data_nsg ? concat(
+    [
+      merge(local.d, { id = "dt-in-data-all", nsg = "data", dir = "INGRESS", proto = "all", ptype = local.t_nsg, peer = "data", desc = "Kafka / Redis cluster traffic between data VMs" }),
+      merge(local.d, { id = "dt-eg-all", nsg = "data", dir = "EGRESS", proto = "all", ptype = local.t_cidr, peer = "0.0.0.0/0", desc = "Outbound via NAT / Service Gateway" }),
+    ],
+    flatten([
+      for p in local.data_client_ports : [
+        merge(local.d, { id = "dt-in-workers-${p}", nsg = "data", dir = "INGRESS", proto = "6", ptype = local.t_nsg, peer = "workers", min = p, max = p, desc = "Workers to Kafka / Redis" }),
+        merge(local.d, { id = "dt-in-pods-${p}", nsg = "data", dir = "INGRESS", proto = "6", ptype = local.t_nsg, peer = "pods", min = p, max = p, desc = "Pods to Kafka / Redis" }),
+      ]
+    ]),
+    flatten([
+      for c in var.data_admin_cidrs : [
+        for p in concat([22], local.data_client_ports) : merge(local.d, {
+          id    = "dt-in-${replace(replace(c, ".", "-"), "/", "-")}-${p}", nsg = "data", dir = "INGRESS", proto = "6",
+          ptype = local.t_cidr, peer = c, min = p, max = p, desc = "Admin access to data VMs"
+        })
+      ]
+    ]),
+  ) : []
+
+  rules = { for r in concat(local.rules_static, local.rules_api, local.rules_lb, local.rules_db, local.rules_db_admin, local.rules_public_lb, local.rules_data) : r.id => r }
 }
 
 resource "oci_core_network_security_group_security_rule" "this" {

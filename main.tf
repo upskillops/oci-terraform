@@ -18,7 +18,9 @@ locals {
   }
 
   # Vault key (if created) wins over an externally supplied key.
-  kms_key_id = var.create_vault ? module.vault[0].key_id : var.kms_key_id
+  kms_key_id  = var.create_vault ? module.vault[0].key_id : var.kms_key_id
+  create_data = var.kafka.enabled || var.redis.enabled
+
   # The jump host subnet may reach the API endpoint and MySQL.
   jumphost_cidrs = var.create_jumphost ? [var.jumphost_subnet_cidr] : []
 
@@ -68,6 +70,7 @@ module "network" {
   subnet_cidrs   = local.subnet_cidrs
 
   create_internet_gateway = var.create_jumphost || var.create_public_lb
+  data_subnet_cidr        = local.create_data ? var.data_subnet_cidr : null
   public_lb_subnet_cidr   = var.create_public_lb ? var.public_lb_subnet_cidr : null
 }
 
@@ -87,6 +90,83 @@ module "security" {
   create_public_lb           = var.create_public_lb
   public_lb_allowed_cidrs    = var.public_lb_allowed_cidrs
   public_lb_ports            = var.public_lb_ports
+  create_data_nsg            = local.create_data
+  data_admin_cidrs           = local.jumphost_cidrs
+  redis_ports                = var.redis.mode == "cluster" ? [6379, 6380] : [6379, 26379]
+}
+
+# Stable public IPs for LoadBalancer Services: survive LB re-creation, so DNS and certificates stay valid.
+resource "oci_core_public_ip" "reserved" {
+  for_each = toset(var.reserved_public_ips)
+
+  compartment_id = var.compartment_ocid
+  lifetime       = "RESERVED"
+  display_name   = "${var.name_prefix}-${each.key}"
+  freeform_tags  = local.tags
+
+  # The OKE cloud controller attaches the IP to the load balancer it creates.
+  lifecycle {
+    ignore_changes = [private_ip_id]
+  }
+}
+
+# Private OCI Container Registry repositories: <region-key>.ocir.io/<namespace>/<name>
+resource "oci_artifacts_container_repository" "this" {
+  for_each = toset(var.container_repositories)
+
+  compartment_id = var.compartment_ocid
+  display_name   = each.value
+  is_public      = false
+  is_immutable   = false
+  freeform_tags  = local.tags
+}
+
+# ---------------- Self-managed Kafka / Redis ----------------
+locals {
+  data_ssh_key = coalesce(var.data_ssh_public_key, var.jumphost_ssh_public_key, "")
+}
+
+module "kafka" {
+  count  = var.kafka.enabled ? 1 : 0
+  source = "./modules/kafka"
+
+  compartment_id      = var.compartment_ocid
+  name_prefix         = var.name_prefix
+  tags                = local.tags
+  availability_domain = local.availability_domains[0]
+  subnet_id           = module.network.data_subnet_id
+  subnet_cidr         = var.data_subnet_cidr
+  nsg_ids             = [module.security.nsg_ids["data"]]
+  ssh_public_key      = local.data_ssh_key
+  node_count          = var.kafka.node_count
+  image               = var.kafka.image
+  shape               = var.kafka.shape
+  ocpus               = var.kafka.ocpus
+  memory_gbs          = var.kafka.memory_gbs
+  boot_volume_gb      = var.kafka.boot_volume_gb
+  heap                = var.kafka.heap
+}
+
+module "redis" {
+  count  = var.redis.enabled ? 1 : 0
+  source = "./modules/redis"
+
+  compartment_id      = var.compartment_ocid
+  name_prefix         = var.name_prefix
+  tags                = local.tags
+  availability_domain = local.availability_domains[0]
+  subnet_id           = module.network.data_subnet_id
+  subnet_cidr         = var.data_subnet_cidr
+  nsg_ids             = [module.security.nsg_ids["data"]]
+  ssh_public_key      = local.data_ssh_key
+  node_count          = var.redis.node_count
+  image               = var.redis.image
+  shape               = var.redis.shape
+  ocpus               = var.redis.ocpus
+  memory_gbs          = var.redis.memory_gbs
+  boot_volume_gb      = var.redis.boot_volume_gb
+  maxmemory           = var.redis.maxmemory
+  mode                = var.redis.mode
 }
 
 module "jumphost" {
@@ -137,6 +217,23 @@ module "oke" {
   }
 }
 
+locals {
+  # GitLab buckets: unversioned (registry layers / CI artifacts churn), merged into the storage module buckets.
+  gitlab_buckets = { for b in var.gitlab_buckets : "gitlab-${b}" => { versioning = "Disabled" } }
+}
+
+module "gitlab_s3" {
+  count  = length(var.gitlab_buckets) > 0 ? 1 : 0
+  source = "./modules/s3user"
+
+  tenancy_ocid   = var.tenancy_ocid
+  compartment_id = var.compartment_ocid
+  name           = "${var.name_prefix}-gitlab-s3"
+  email          = var.gitlab_s3_user_email
+  bucket_names   = [for k in keys(local.gitlab_buckets) : "${var.name_prefix}-${k}"]
+  tags           = local.tags
+}
+
 module "storage" {
   source = "./modules/storage"
 
@@ -144,7 +241,7 @@ module "storage" {
   tenancy_ocid             = var.tenancy_ocid
   name_prefix              = var.name_prefix
   tags                     = local.tags
-  buckets                  = var.buckets
+  buckets                  = merge(var.buckets, local.gitlab_buckets)
   kms_key_id               = local.kms_key_id
   cluster_id               = module.oke.cluster_id
   workload_namespace       = var.storage_workload_namespace

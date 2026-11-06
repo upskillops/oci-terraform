@@ -36,6 +36,49 @@ output "public_lb_nsg_id" {
   value       = try(module.security.nsg_ids["lb_public"], null)
 }
 
+output "reserved_public_ips" {
+  description = "Reserved public IPs by name (use as spec.loadBalancerIP)."
+  value       = { for k, v in oci_core_public_ip.reserved : k => v.ip_address }
+}
+
+output "gitlab_s3_endpoint" {
+  value = length(var.gitlab_buckets) > 0 ? "https://${module.storage.namespace}.compat.objectstorage.${var.region}.oraclecloud.com" : null
+}
+
+output "gitlab_s3_access_key" {
+  value = try(module.gitlab_s3[0].access_key, null)
+}
+
+output "gitlab_s3_secret_key" {
+  value     = try(module.gitlab_s3[0].secret_key, null)
+  sensitive = true
+}
+
+output "container_repositories" {
+  description = "OCIR image paths (docker login bom.ocir.io -u '<namespace>/<username>' with an OCI auth token)."
+  value       = { for k, v in oci_artifacts_container_repository.this : k => "bom.ocir.io/${v.namespace}/${v.display_name}" }
+}
+
+output "kafka_bootstrap_servers" {
+  value = try(module.kafka[0].bootstrap_servers, null)
+}
+
+output "redis" {
+  description = "Cluster mode: use cluster_nodes as seeds. Sentinel mode: master name + sentinels."
+  value = try({
+    mode          = module.redis[0].mode
+    cluster_nodes = module.redis[0].cluster_nodes
+    primary       = module.redis[0].primary
+    sentinels     = module.redis[0].sentinels
+    master_name   = module.redis[0].master_name
+  }, null)
+}
+
+output "redis_password" {
+  value     = try(module.redis[0].password, null)
+  sensitive = true
+}
+
 output "jumphost_public_ip" {
   value = try(module.jumphost[0].public_ip, null)
 }

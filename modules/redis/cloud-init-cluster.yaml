@@ -1,0 +1,101 @@
+#cloud-config
+# Redis Cluster node: two instances per VM (6379 = master, 6380 = replica of a master on another VM).
+write_files:
+%{ for port in [6379, 6380] ~}
+  - path: /etc/redis/redis-${port}.conf
+    permissions: "0640"
+    content: |
+      bind 0.0.0.0
+      port ${port}
+      protected-mode no
+      requirepass ${password}
+      masterauth ${password}
+      cluster-enabled yes
+      cluster-config-file /data/nodes-${port}.conf
+      dbfilename dump-${port}.rdb
+      cluster-node-timeout 5000
+      cluster-announce-ip ${ip}
+      cluster-announce-port ${port}
+      cluster-announce-bus-port ${port + 10000}
+      cluster-require-full-coverage no
+      dir /data
+      appendonly yes
+      appendfilename appendonly-${port}.aof
+      appenddirname appendonlydir-${port}
+      appendfsync everysec
+      maxmemory ${maxmemory}
+      maxmemory-policy noeviction
+  - path: /etc/systemd/system/redis-${port}.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Redis Cluster instance ${port} in Podman
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Restart=always
+      RestartSec=5
+      ExecStartPre=-/usr/bin/podman rm -f redis-${port}
+      ExecStart=/usr/bin/podman run --name redis-${port} --network host \
+        -v /etc/redis/redis-${port}.conf:/usr/local/etc/redis/redis.conf:ro,Z \
+        -v /var/lib/redis/${port}:/data:Z \
+        ${image} redis-server /usr/local/etc/redis/redis.conf
+      ExecStop=/usr/bin/podman stop -t 30 redis-${port}
+
+      [Install]
+      WantedBy=multi-user.target
+%{ endfor ~}
+%{ if create ~}
+  # Forms the cluster once all 6 instances answer; does nothing if it already exists.
+  - path: /usr/local/bin/redis-cluster-init.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -u
+      export REDISCLI_AUTH='${password}'
+      CLI="podman exec -e REDISCLI_AUTH redis-6379 redis-cli"
+      if $CLI cluster info 2>/dev/null | grep -q 'cluster_known_nodes:6'; then
+        echo "cluster already formed"; exit 0
+      fi
+      for n in ${cluster_nodes}; do
+        until $CLI -h "$${n%:*}" -p "$${n#*:}" ping 2>/dev/null | grep -q PONG; do
+          echo "waiting for $n"; sleep 10
+        done
+      done
+      $CLI --cluster create ${cluster_nodes} --cluster-replicas 1 --cluster-yes
+  - path: /etc/systemd/system/redis-cluster-init.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Form the Redis Cluster (once)
+      After=redis-6379.service
+      Requires=redis-6379.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/redis-cluster-init.sh
+      Restart=on-failure
+      RestartSec=30
+
+      [Install]
+      WantedBy=multi-user.target
+%{ endif ~}
+  - path: /etc/sysctl.d/90-redis.conf
+    content: |
+      vm.overcommit_memory = 1
+runcmd:
+  - sysctl --system
+  - dnf install -y podman
+  # One data dir per instance: a directory shared by two containers with :Z is relabelled for
+  # only one of them (SELinux MCS), and the other then fails RDB saves -> MISCONF write errors.
+  # The image runs as redis (uid 999).
+  - mkdir -p /var/lib/redis/6379 /var/lib/redis/6380 && chown -R 999:999 /var/lib/redis /etc/redis
+  - firewall-cmd --permanent --add-port=6379-6380/tcp --add-port=16379-16380/tcp
+  - firewall-cmd --reload
+  - podman pull ${image}
+  - systemctl daemon-reload
+  - systemctl enable --now redis-6379.service redis-6380.service
+%{ if create ~}
+  - systemctl enable --now redis-cluster-init.service
+%{ endif ~}

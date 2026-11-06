@@ -16,7 +16,9 @@ create_bastion       = false
 bastion_client_cidrs = []
 
 # Public load balancer subnet + NSG (Istio ingress gateway)
-create_public_lb = true
+create_public_lb    = true
+public_lb_ports     = [22, 80, 443] # 22 = GitLab SSH (git clone over SSH)
+reserved_public_ips = ["gitlab"]
 
 # Public jump host (SSH from the allowed IPs; kubectl via: ssh -D 1080 opc@<ip>)
 create_jumphost         = true
@@ -26,7 +28,7 @@ jumphost_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDPlTqJAnp/97kT8
 # Nodes (minimum footprint)
 node_architecture = "x86_64"
 node_pools = {
-  general = { shape = "VM.Standard.E4.Flex", ocpus = 1, memory_gbs = 8, size = 3, boot_volume_gb = 50 }
+  general = { shape = "VM.Standard.E4.Flex", ocpus = 5, memory_gbs = 16, size = 3, boot_volume_gb = 50 }
 }
 
 # Storage
@@ -34,6 +36,33 @@ buckets = {
   data    = {}
   backups = {}
 }
+
+# GitLab object storage (S3-compatible API): buckets uat-gitlab-<name> + dedicated access key
+gitlab_buckets = [
+  "registry", "lfs", "artifacts", "uploads", "packages", "mr-diffs",
+  "terraform-state", "ci-secure-files", "dependency-proxy", "backups", "tmp",
+]
+gitlab_s3_user_email = "amit.chaturvedi+gitlab-s3@wibmo.com"
+
+# OCI Container Registry (private repositories)
+container_repositories = [
+  "accosa2-config-management",
+  "acs2-alert-management",
+  "acs2-api",
+  "acs2-customer-data-api",
+  "acs2-datastore-api",
+  "acs2-expiry-service",
+  "acs2-issuer-config-api",
+  "acs2-job-scheduler",
+  "acs2-ui",
+  "oob-service",
+  "otp-engine",
+]
+
+# Self-managed Kafka (3 x KRaft broker+controller) and Redis Cluster on VMs
+kafka = { enabled = true }
+# Redis Cluster: 3 masters (6379) + 3 replicas (6380) on 3 VMs; 1gb per instance on the 4 GB VMs
+redis = { enabled = true, mode = "cluster", maxmemory = "1gb" }
 
 # Security / observability
 create_vault     = false

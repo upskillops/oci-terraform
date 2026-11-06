@@ -269,6 +269,76 @@ variable "public_lb_ports" {
   default     = [80, 443]
 }
 
+variable "reserved_public_ips" {
+  type        = list(string)
+  description = "Names of reserved public IPs to create for Kubernetes LoadBalancer Services (spec.loadBalancerIP)."
+  default     = []
+}
+
+# ---------------- GitLab object storage ----------------
+variable "gitlab_buckets" {
+  type        = list(string)
+  description = "GitLab bucket short names; created as <name_prefix>-gitlab-<name> with an S3-compatible access key. [] = none."
+  default     = []
+}
+
+variable "gitlab_s3_user_email" {
+  type        = string
+  description = "Email for the GitLab S3 IAM user (identity domains require one)."
+  default     = null
+}
+
+# ---------------- OCI Container Registry ----------------
+variable "container_repositories" {
+  type        = list(string)
+  description = "Private OCI Container Registry (OCIR) repositories to create, e.g. [\"uat-ivs\"]."
+  default     = []
+}
+
+# ---------------- Self-managed Kafka / Redis (VMs) ----------------
+variable "data_subnet_cidr" {
+  type        = string
+  description = "Private subnet for the Kafka / Redis VMs."
+  default     = "10.0.6.0/24"
+}
+
+variable "data_ssh_public_key" {
+  type        = string
+  description = "SSH key for the Kafka / Redis VMs (opc). null = jumphost_ssh_public_key."
+  default     = null
+}
+
+variable "kafka" {
+  type = object({
+    enabled        = optional(bool, false)
+    node_count     = optional(number, 3)
+    image          = optional(string, "docker.io/apache/kafka:4.3.2")
+    shape          = optional(string, "VM.Standard.E4.Flex")
+    ocpus          = optional(number, 1)
+    memory_gbs     = optional(number, 8)
+    boot_volume_gb = optional(number, 100)
+    heap           = optional(string, "2g")
+  })
+  description = "Self-managed Apache Kafka (KRaft) cluster on VMs."
+  default     = {}
+}
+
+variable "redis" {
+  type = object({
+    enabled        = optional(bool, false)
+    node_count     = optional(number, 3)
+    image          = optional(string, "docker.io/library/redis:8.10.2")
+    shape          = optional(string, "VM.Standard.E4.Flex")
+    ocpus          = optional(number, 1)
+    memory_gbs     = optional(number, 4)
+    boot_volume_gb = optional(number, 50)
+    maxmemory      = optional(string, "2gb")
+    mode           = optional(string, "cluster") # "cluster" (Redis Cluster) or "sentinel"
+  })
+  description = "Self-managed Redis on VMs: Redis Cluster (default) or primary + replicas + Sentinel."
+  default     = {}
+}
+
 # ---------------- Public jump host ----------------
 variable "create_jumphost" {
   type        = bool

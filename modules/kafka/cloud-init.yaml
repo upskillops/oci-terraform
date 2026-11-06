@@ -1,0 +1,52 @@
+#cloud-config
+write_files:
+  - path: /etc/kafka/kafka.env
+    permissions: "0644"
+    content: |
+      CLUSTER_ID=${cluster_id}
+      KAFKA_NODE_ID=${node_id}
+      KAFKA_PROCESS_ROLES=broker,controller
+      KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://${ip}:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS=${voters}
+      KAFKA_LOG_DIRS=/var/lib/kafka/data
+      KAFKA_DEFAULT_REPLICATION_FACTOR=${rf}
+      KAFKA_MIN_INSYNC_REPLICAS=${min_isr}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=${rf}
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=${rf}
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=${min_isr}
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE=false
+      KAFKA_HEAP_OPTS=-Xms${heap} -Xmx${heap}
+  - path: /etc/systemd/system/kafka.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Apache Kafka (KRaft) in Podman
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Restart=always
+      RestartSec=10
+      TimeoutStartSec=600
+      ExecStartPre=-/usr/bin/podman rm -f kafka
+      ExecStart=/usr/bin/podman run --name kafka --network host \
+        --env-file /etc/kafka/kafka.env \
+        -v /var/lib/kafka:/var/lib/kafka:Z \
+        ${image}
+      ExecStop=/usr/bin/podman stop -t 60 kafka
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - dnf install -y podman
+  # The image runs as appuser (uid 1000).
+  - mkdir -p /var/lib/kafka/data && chown -R 1000:1000 /var/lib/kafka
+  - firewall-cmd --permanent --add-port=9092/tcp --add-port=9093/tcp
+  - firewall-cmd --reload
+  - podman pull ${image}
+  - systemctl daemon-reload
+  - systemctl enable --now kafka.service
